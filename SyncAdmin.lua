@@ -75,7 +75,7 @@ local Cfg = {
     FollowName  = "",
     FollowTgt   = nil,
     PanelW      = 300,
-    PanelH      = 480,
+    PanelH      = 300,
 }
 
 -- ============================================================
@@ -1979,7 +1979,7 @@ do
         panel.Size = UDim2.new(0, v, 0, Cfg.PanelH)
     end)
 
-    makeStepper(tf, "Altura", 3, Cfg.PanelH, 360, 700, 10, function(v)
+    makeStepper(tf, "Altura", 3, Cfg.PanelH, 260, 700, 10, function(v)
         Cfg.PanelH = v
         panel.Size = UDim2.new(0, Cfg.PanelW, 0, v)
     end)
