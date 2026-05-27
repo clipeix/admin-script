@@ -68,7 +68,7 @@ local State = {
 
 local Cfg = {
     WalkSpeed   = 16,
-    JumpPower   = 100,
+    JumpPower   = 50,
     FlingForce  = 700,
     DropDmg     = 60,
     AntiVoidY   = -80,
@@ -690,11 +690,12 @@ sg.Parent = PG
 -- ============================================================
 local floatBtn = Instance.new("Frame")
 floatBtn.Name = "FloatBtn"
-floatBtn.Size = UDim2.new(0, 44, 0, 44)
-floatBtn.Position = UDim2.new(1, -58, 0.5, -22)
+floatBtn.Size = UDim2.new(0, 28, 0, 28)
+floatBtn.Position = UDim2.new(0, 12, 0.15, 0)
 floatBtn.BackgroundColor3 = C.Red
 floatBtn.BorderSizePixel = 0
 floatBtn.ZIndex = 50
+floatBtn.BackgroundTransparency = 0.35
 floatBtn.Parent = sg
 
 local floatCorner = Instance.new("UICorner")
@@ -703,7 +704,7 @@ floatCorner.Parent = floatBtn
 
 local floatStroke = Instance.new("UIStroke")
 floatStroke.Color = C.RedHot
-floatStroke.Thickness = 2
+floatStroke.Thickness = 1.5
 floatStroke.Parent = floatBtn
 
 local floatLabel = Instance.new("TextLabel")
@@ -711,7 +712,8 @@ floatLabel.Size = UDim2.new(1, 0, 1, 0)
 floatLabel.BackgroundTransparency = 1
 floatLabel.Text = "S"
 floatLabel.TextColor3 = C.White
-floatLabel.TextSize = 22
+floatLabel.TextTransparency = 0.35
+floatLabel.TextSize = 14
 floatLabel.Font = Enum.Font.GothamBold
 floatLabel.ZIndex = 51
 floatLabel.Parent = floatBtn
@@ -1375,7 +1377,7 @@ do
         Cfg.WalkSpeed = v; applyWalkSpeed()
     end)
 
-    makeStepper(tf, "JumpPower", 9, 100, 50, 500, 10, function(v)
+    makeStepper(tf, "JumpPower", 9, 50, 50, 500, 10, function(v)
         Cfg.JumpPower = v; applyJumpPower()
     end)
 
@@ -2162,51 +2164,9 @@ UserInputService.InputEnded:Connect(function(input)
     end
 end)
 
--- ============================================================
---  DRAG DO BOTAO FLUTUANTE
--- ============================================================
-local draggingFloat = false
-local floatDragStart, floatDragPos
-
+-- ABRIR/FECHAR AO CLICAR
 floatBtn.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1
-    or input.UserInputType == Enum.UserInputType.Touch then
-        draggingFloat = true
-        floatDragStart = input.Position
-        floatDragPos = floatBtn.Position
-    end
-end)
-
-UserInputService.InputChanged:Connect(function(input)
-    if draggingFloat and
-       (input.UserInputType == Enum.UserInputType.MouseMovement
-       or input.UserInputType == Enum.UserInputType.Touch) then
-        local delta = input.Position - floatDragStart
-        floatBtn.Position = UDim2.new(
-            floatDragPos.X.Scale, floatDragPos.X.Offset + delta.X,
-            floatDragPos.Y.Scale, floatDragPos.Y.Offset + delta.Y
-        )
-    end
-end)
-
-UserInputService.InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1
-    or input.UserInputType == Enum.UserInputType.Touch then
-        if draggingFloat then
-            local moved = input.Position - floatDragStart
-            if moved.Magnitude < 6 then
-                -- clique (sem drag) — abrir/fechar
-                if panelVisible then closePanel() else openPanel() end
-            end
-        end
-        draggingFloat = false
-    end
-end)
-
--- Tecla RightShift para PC
-UserInputService.InputBegan:Connect(function(input, gameProcessed)
-    if gameProcessed then return end
-    if input.KeyCode == Enum.KeyCode.RightShift then
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
         if panelVisible then closePanel() else openPanel() end
     end
 end)
