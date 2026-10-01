@@ -764,7 +764,7 @@ local function superRingStart()
         angle = angle + math.rad(150 * dt) -- Velocidade de giro (mude o 150 se quiser mais rápido)
         for i, part in ipairs(ringParts) do
             local offsetAngle = angle + (math.rad(360 / #ringParts) * i)
-            local offset = Vector3.new(math.cos(offsetAngle) * State.RingRadius, 0, math.sin(offsetAngle) * State.RingRadius)
+            local offset = Vector3.new(math.cos(offsetAngle) * Cfg.RingRadius, 0, math.sin(offsetAngle) * Cfg.RingRadius)
             part.CFrame = CFrame.new(r.Position + offset)
         end
     end)
@@ -779,16 +779,6 @@ local function superRingStop()
     ringParts = {}
     notify("Super Ring", "DESATIVADO", 2)
 end
-
-    makeAction(tf, "Super Ring — Aumentar Alcance (+)", 4.6, function()
-        State.RingRadius = State.RingRadius + 2 -- Aumenta de 2 em 2
-        notify("Super Ring", "Alcance aumentado para: " .. State.RingRadius, 2)
-    end)
-
-    makeAction(tf, "Super Ring — Diminuir Alcance (-)", 4.7, function()
-        State.RingRadius = math.max(1, State.RingRadius - 2) -- Diminui de 2 em 2, mas nunca menor que 1
-        notify("Super Ring", "Alcance diminuído para: " .. State.RingRadius, 2)
-    end)
 
 -- FULLBRIGHT
 local fbOrig = {}
@@ -1027,7 +1017,7 @@ local titleLbl = Instance.new("TextLabel")
 titleLbl.Size = UDim2.new(1, -80, 1, 0)
 titleLbl.Position = UDim2.new(0, 14, 0, 0)
 titleLbl.BackgroundTransparency = 1
-titleLbl.Text = "⬡ FIRST DEV"
+titleLbl.Text = "first dev ✪"
 titleLbl.TextColor3 = C.White
 titleLbl.TextSize = 16
 titleLbl.Font = Enum.Font.GothamBold
@@ -1040,7 +1030,7 @@ local verLbl = Instance.new("TextLabel")
 verLbl.Size = UDim2.new(0, 60, 0, 14)
 verLbl.Position = UDim2.new(0, 14, 1, -16)
 verLbl.BackgroundTransparency = 1
-verLbl.Text = "FINAL EDITION"
+verLbl.Text = "feito com muito amor"
 verLbl.TextColor3 = C.RedHot
 verLbl.TextSize = 9
 verLbl.Font = Enum.Font.GothamBold
@@ -1799,6 +1789,16 @@ do
         local _, setSuperRing = makeToggle(tf, "Super Ring — Aura giratória", 4.5, function(v)
         State.SuperRing = v
         if v then superRingStart() else superRingStop() end
+    end)
+    
+    makeAction(tf, "Super Ring — Aumentar Alcance (+)", 4.6, function()
+        Cfg.RingRadius = Cfg.RingRadius + 2 -- Aumenta de 2 em 2
+        notify("Super Ring", "Alcance aumentado para: " .. Cfg.RingRadius, 2)
+    end)
+
+    makeAction(tf, "Super Ring — Diminuir Alcance (-)", 4.7, function()
+        Cfg.RingRadius = math.max(1, Cfg.RingRadius - 2) -- Diminui de 2 em 2, mas nunca menor que 1
+        notify("Super Ring", "Alcance diminuído para: " .. Cfg.RingRadius, 2)
     end)
 
     local secPlayers = makeSection(tf, "Lista de Jogadores", 5)
