@@ -80,7 +80,7 @@ local Cfg = {
     PanelW      = 300,
     PanelH      = 300,
     FlySpeed = 30,
-    RingRadius = 50,
+    RingRadius = 30,
 
 }
 
@@ -109,7 +109,7 @@ end
 local function notify(title, msg, dur)
     pcall(function()
         StarterGui:SetCore("SendNotification", {
-            Title = "[S] "..title, Text = msg, Duration = dur or 3
+            Title = "[☠️] "..title, Text = msg, Duration = dur or 3
         })
     end)
 end
@@ -641,7 +641,7 @@ local function flingAutoStop()
     notify("Fling Auto","DESATIVADO",2)
 end
 
--- DROP KICK — bate em quem esta na frente
+-- DROP KICK (Ajustado para o jogador nao morrer/sair do mapa)
 local dropCooldown = false
 
 local function doDropKick()
@@ -651,23 +651,11 @@ local function doDropKick()
         notify("DropKick","Nenhum jogador na frente!",2); return
     end
     local tr = target.Character:FindFirstChild("HumanoidRootPart")
-    local th = target.Character:FindFirstChildOfClass("Humanoid")
     local r  = getRoot()
     if not tr or not r then return end
 
-    -- Teleporta perto e aplica impulso
-    r.CFrame = tr.CFrame * CFrame.new(0, 0, 1.8)
-    task.wait(0.04)
-    if th then th.Health = math.max(0, th.Health - Cfg.DropDmg) end
+    local safePos = r.CFrame
 
-    local bv = Instance.new("BodyVelocity")
-    bv.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
-    local cf = Camera.CFrame
-    bv.Velocity = (cf.LookVector * 60) + Vector3.new(0, 60, 0)
-    bv.P = 1e6
-    bv.Parent = tr
-
-    -- Efeito visual
     local ef = Instance.new("Part")
     ef.Anchored = true; ef.CanCollide = false
     ef.Size = Vector3.new(0.3,0.3,0.3)
@@ -678,13 +666,33 @@ local function doDropKick()
     ef.Parent = workspace
     tw(ef, {Size=Vector3.new(8,8,8), Transparency=1}, 0.45):Play()
 
-    task.delay(0.3, function() if bv and bv.Parent then bv:Destroy() end end)
+    local bav = Instance.new("BodyAngularVelocity")
+    bav.AngularVelocity = Vector3.new(0, 999999, 0)
+    bav.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
+    bav.P = math.huge
+    bav.Parent = r
+
+    local startTime = tick()
+    local hitLoop
+    hitLoop = RunService.Heartbeat:Connect(function()
+        if tick() - startTime > 0.3 then
+            hitLoop:Disconnect()
+            if bav then bav:Destroy() end
+            r.CFrame = safePos
+            r.AssemblyLinearVelocity = Vector3.zero
+            r.AssemblyAngularVelocity = Vector3.zero
+        else
+            r.CFrame = tr.CFrame
+            r.AssemblyLinearVelocity = Vector3.zero
+        end
+    end)
+
     task.delay(0.5, function() if ef and ef.Parent then ef:Destroy()  end end)
 
     dropCooldown = true
     task.delay(1.0, function() dropCooldown = false end)
 
-    notify("DropKick","HIT! "..target.Name.." -"..Cfg.DropDmg.." HP",3)
+    notify("DropKick","BAM! "..target.Name.." foi arremessado!",3)
 end
 
 -- FOLLOW — melhorado: CFrame direto, bem colado, offset configuravel
@@ -737,46 +745,47 @@ local function followStop()
     notify("Follow","DESATIVADO",2)
 end
 
--- SUPER RING
-local ringParts = {}
+-- SUPER RING (Puxa objetos soltos pelo mapa para orbitar você)
 local function superRingStart()
     State.SuperRing = true
     killConn("SuperRing")
     
-    -- Cria as partes do anel
-    for i = 1, 6 do
-        local p = Instance.new("Part")
-        p.Size = Vector3.new(1, 1, 1)
-        p.Anchored = true
-        p.CanCollide = false
-        p.Material = Enum.Material.Neon
-        p.Color = Color3.fromRGB(220, 28, 28) -- Vermelho do painel
-        p.Parent = workspace
-        table.insert(ringParts, p)
-    end
-
     local angle = 0
     Conn["SuperRing"] = RunService.Heartbeat:Connect(function(dt)
         if not State.SuperRing then return end
         local r = getRoot()
         if not r then return end
         
-        angle = angle + math.rad(150 * dt) -- Velocidade de giro (mude o 150 se quiser mais rápido)
-        for i, part in ipairs(ringParts) do
-            local offsetAngle = angle + (math.rad(360 / #ringParts) * i)
-            local offset = Vector3.new(math.cos(offsetAngle) * Cfg.RingRadius, 0, math.sin(offsetAngle) * Cfg.RingRadius)
-            part.CFrame = CFrame.new(r.Position + offset)
+        angle = angle + math.rad(150 * dt)
+        
+        -- Procura partes desancoradas no mapa (itens, blocos de desastres, etc)
+        for _, part in ipairs(workspace:GetDescendants()) do
+            -- Ignora o próprio jogador e partes presas
+            if part:IsA("BasePart") and not part.Anchored and not part:IsDescendantOf(getChar()) then
+                local dist = (part.Position - r.Position).Magnitude
+                if dist <= Cfg.RingRadius then
+                    -- Usa o tamanho da parte para gerar um ângulo diferente, espalhando elas na órbita
+                    local offsetAngle = angle + (part.Size.Magnitude) 
+                    local offset = Vector3.new(
+                        math.cos(offsetAngle) * (Cfg.RingRadius * 0.5), 
+                        math.sin(angle * 2) * 2, -- Faz as partes flutuarem para cima e para baixo
+                        math.sin(offsetAngle) * (Cfg.RingRadius * 0.5)
+                    )
+                    
+                    local orbitPos = r.Position + offset
+                    -- Move o objeto suavemente para a órbita pegando a NetworkOwnership local
+                    part.CFrame = part.CFrame:Lerp(CFrame.new(orbitPos), 0.15)
+                    -- Força velocidade para manter o objeto ativo no servidor e não cair
+                    part.Velocity = Vector3.new(0, 2, 0) 
+                end
+            end
         end
     end)
-    notify("Super Ring", "ATIVADO — Aura giratória ligada!", 3)
+    notify("Super Ring", "ATIVADO — AURA MÁXIMA!", 3)
 end
 
 local function superRingStop()
     killConn("SuperRing")
-    for _, p in ipairs(ringParts) do
-        if p and p.Parent then p:Destroy() end
-    end
-    ringParts = {}
     notify("Super Ring", "DESATIVADO", 2)
 end
 
@@ -1017,7 +1026,7 @@ local titleLbl = Instance.new("TextLabel")
 titleLbl.Size = UDim2.new(1, -80, 1, 0)
 titleLbl.Position = UDim2.new(0, 14, 0, 0)
 titleLbl.BackgroundTransparency = 1
-titleLbl.Text = "first dev ✪"
+titleLbl.Text = "first dev </>"
 titleLbl.TextColor3 = C.White
 titleLbl.TextSize = 16
 titleLbl.Font = Enum.Font.GothamBold
@@ -1754,12 +1763,40 @@ do
         if v then godStart() else godStop() end
     end)
 
-    makeAction(tf, "Kill — Matar o mais proximo", 10, function()
+         -- KILL MELHORADO (Nao se mata / Nao sai do mapa)
+    makeAction(tf, "Kill — Matar o mais proximo", 11, function()
         local t = nearestPlayer(20)
         if t and t.Character then
-            local h = t.Character:FindFirstChildOfClass("Humanoid")
-            if h then h.Health = 0; notify("Kill","Matou "..t.Name,3) end
-        else notify("Kill","Nenhum jogador perto!",2) end
+            local tr = t.Character:FindFirstChild("HumanoidRootPart")
+            local r = getRoot()
+            if tr and r then
+                local safePos = r.CFrame
+                
+                local bav = Instance.new("BodyAngularVelocity")
+                bav.AngularVelocity = Vector3.new(0, 999999, 0)
+                bav.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
+                bav.P = math.huge
+                bav.Parent = r
+                
+                local t_start = tick()
+                local c
+                c = RunService.Heartbeat:Connect(function()
+                    if tick() - t_start > 0.3 then
+                        c:Disconnect()
+                        if bav then bav:Destroy() end
+                        r.CFrame = safePos
+                        r.AssemblyLinearVelocity = Vector3.zero
+                        r.AssemblyAngularVelocity = Vector3.zero
+                    else
+                        r.CFrame = tr.CFrame
+                        r.AssemblyLinearVelocity = Vector3.zero
+                    end
+                end)
+                notify("Kill","Fling letal ativado em "..t.Name,3)
+            end
+        else 
+            notify("Kill","Nenhum jogador perto para matar!",2) 
+        end
     end)
 end
 
@@ -1791,14 +1828,8 @@ do
         if v then superRingStart() else superRingStop() end
     end)
     
-    makeAction(tf, "Super Ring — Aumentar Alcance (+)", 4.6, function()
-        Cfg.RingRadius = Cfg.RingRadius + 2 -- Aumenta de 2 em 2
-        notify("Super Ring", "Alcance aumentado para: " .. Cfg.RingRadius, 2)
-    end)
-
-    makeAction(tf, "Super Ring — Diminuir Alcance (-)", 4.7, function()
-        Cfg.RingRadius = math.max(1, Cfg.RingRadius - 2) -- Diminui de 2 em 2, mas nunca menor que 1
-        notify("Super Ring", "Alcance diminuído para: " .. Cfg.RingRadius, 2)
+    makeStepper(tf, "Alcance Super Ring", 4.6, Cfg.RingRadius, 5, 300, 5, function(v)
+        Cfg.RingRadius = v
     end)
 
     local secPlayers = makeSection(tf, "Lista de Jogadores", 5)
