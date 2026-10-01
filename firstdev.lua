@@ -85,6 +85,19 @@ local Cfg = {
 }
 
 -- ============================================================
+--  SISTEMA DE TAGS (DONO / VIP)
+-- ============================================================
+local TagsCfg = {
+    OwnerUser = "xyc7z", -- Coloque o nome do dono aqui
+    Vips = {
+        ["Ednabil"] = true,
+        ["Angel15k91"] = true
+    },
+    HaloColor = Color3.fromRGB(255, 215, 0) -- Cor dourada neon
+}
+
+
+-- ============================================================
 --  CONEXOES & INSTANCIAS
 -- ============================================================
 local Conn = {}
@@ -109,7 +122,7 @@ end
 local function notify(title, msg, dur)
     pcall(function()
         StarterGui:SetCore("SendNotification", {
-            Title = "[☠️] "..title, Text = msg, Duration = dur or 3
+            Title = "[♡] "..title, Text = msg, Duration = dur or 3
         })
     end)
 end
@@ -168,6 +181,99 @@ end
 -- ============================================================
 --  FUNCOES DE JOGO
 -- ============================================================
+
+-- ============================================================
+--  SISTEMA DE TAGS (DONO / VIP) - VISUAL PREMIUM
+-- ============================================================
+local TagsCfg = {
+    OwnerUser = "xyc7z", -- Coloque o nome do dono aqui
+    Vips = {
+        ["Ednabil"] = true,
+        ["Angel15k91"] = true
+    }
+}
+
+local function aplicarTagsEVisuais(player, character)
+    if not character then return end
+    local head = character:WaitForChild("Head", 5)
+    if not head then return end
+
+    -- Limpa itens antigos para não duplicar
+    local oldTag = head:FindFirstChild("__SytemRoleTag")
+    if oldTag then oldTag:Destroy() end
+    local oldAccessory = character:FindFirstChild("__SystemAccessory")
+    if oldAccessory then oldAccessory:Destroy() end
+
+    local isOwner = (player.Name == TagsCfg.OwnerUser or player.DisplayName == TagsCfg.OwnerUser)
+    local isVip = TagsCfg.Vips[player.Name]
+
+    if isOwner or isVip then
+        -- 1. Cria o Item e a Base do Texto
+        local item = Instance.new("Part")
+        item.Name = "__SystemAccessory"
+        item.CanCollide = false
+        item.Massless = true
+        item.Anchored = false
+        item.CastShadow = false
+        
+        local mesh = Instance.new("SpecialMesh")
+        mesh.MeshType = Enum.MeshType.FileMesh
+        mesh.Parent = item
+        
+        local weld = Instance.new("Weld")
+        weld.Part0 = head
+        weld.Part1 = item
+        weld.Parent = item
+
+        local bb = Instance.new("BillboardGui")
+        bb.Name = "__SytemRoleTag"
+        bb.Size = UDim2.new(0, 200, 0, 40)
+        bb.AlwaysOnTop = true
+        bb.Parent = head
+
+        local lbl = Instance.new("TextLabel")
+        lbl.Size = UDim2.new(1, 0, 1, 0)
+        lbl.BackgroundTransparency = 1
+        lbl.TextStrokeTransparency = 0.3
+        lbl.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+        lbl.TextSize = 16
+        lbl.Font = Enum.Font.GothamBlack
+        lbl.Parent = bb
+
+        -- 2. Configurações Específicas (Dono ou VIP)
+        if isOwner then
+            -- DONO: Coroa + Nome
+            item.Size = Vector3.new(1, 1, 1)
+            item.Color = Color3.fromRGB(255, 215, 0) 
+            item.Material = Enum.Material.SmoothPlastic
+            
+            mesh.MeshId = "rbxassetid://1078075" 
+            mesh.Scale = Vector3.new(0.6, 0.6, 0.6) 
+            
+            -- Coroa apoiada na cabeça
+            weld.C0 = CFrame.new(0, 0.8, 0) 
+            
+            lbl.Text = "OWNER"
+            lbl.TextColor3 = Color3.fromRGB(255, 215, 0) 
+            
+            -- Altura ajustada: Texto centralizado um pouco acima da Coroa
+            bb.StudsOffset = Vector3.new(0, 1.5, 0) 
+            
+            -- Aplica a peça 3D no personagem apenas se for o Dono
+            item.Parent = character
+        else
+            -- VIP: Apenas Nome (Removemos a auréola)
+            item:Destroy() -- Destrói a peça base para não sobrecarregar com blocos invisíveis
+            
+            lbl.Text = "VIP"
+            lbl.TextColor3 = Color3.fromRGB(0, 255, 255) 
+            
+            -- Altura ajustada: Texto centralizado um pouco acima da cabeça
+            bb.StudsOffset = Vector3.new(0, 1.2, 0)
+        end
+    end
+end
+
 
 -- NOCLIP
 local function noclipStart()
@@ -903,6 +1009,29 @@ LP.CharacterAdded:Connect(function()
     applyWalkSpeed()
     applyJumpPower()
 end)
+
+-- ============================================================
+--  INICIALIZADOR DE VISUAIS (TAGS/HALO)
+-- ============================================================
+-- Aplica em jogadores que já estão no mapa
+for _, p in ipairs(Players:GetPlayers()) do
+    if p.Character then
+        task.spawn(aplicarTagsEVisuais, p, p.Character)
+    end
+    p.CharacterAdded:Connect(function(char)
+        task.wait(0.5)
+        aplicarTagsEVisuais(p, char)
+    end)
+end
+
+-- Aplica nos jogadores novos que entrarem
+Players.PlayerAdded:Connect(function(p)
+    p.CharacterAdded:Connect(function(char)
+        task.wait(0.5)
+        aplicarTagsEVisuais(p, char)
+    end)
+end)
+
 
 -- ============================================================
 --  UI — PAINEL SYNC ADMIN
