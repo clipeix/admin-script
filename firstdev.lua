@@ -240,6 +240,24 @@ local function aplicarTagsEVisuais(player, character)
         lbl.Font = Enum.Font.GothamBlack
         lbl.Parent = bb
 
+        -- === CÁLCULO DINÂMICO DO TOPO DO CABELO/ACESSÓRIOS ===
+        local alturaTopo = head.Size.Y / 2
+        
+        -- Verifica se o avatar tem cabelos/chapéus para pegar o ponto visual mais alto
+        for _, child in ipairs(character:GetChildren()) do
+            if child:IsA("Accessory") then
+                local handle = child:FindFirstChild("Handle")
+                if handle then
+                    local relPos = head.CFrame:PointToObjectSpace(handle.Position)
+                    local topoAcessorio = relPos.Y + (handle.Size.Y / 2)
+                    if topoAcessorio > alturaTopo and topoAcessorio < 3.0 then
+                        alturaTopo = topoAcessorio
+                    end
+                end
+            end
+        end
+        -- =====================================================
+
         -- 2. Configurações Específicas (Dono ou VIP)
         if isOwner then
             -- DONO: Coroa + Nome
@@ -250,30 +268,29 @@ local function aplicarTagsEVisuais(player, character)
             mesh.MeshId = "rbxassetid://1078075" 
             mesh.Scale = Vector3.new(0.6, 0.6, 0.6) 
             
-            -- Coroa apoiada na cabeça
-            weld.C0 = CFrame.new(0, 0.8, 0) 
+            -- Pousa a coroa suavemente sobre o ponto mais alto do cabelo
+            weld.C0 = CFrame.new(0, alturaTopo + 0.1, 0) 
             
             lbl.Text = "OWNER"
             lbl.TextColor3 = Color3.fromRGB(255, 215, 0) 
             
-            -- Altura ajustada: Texto centralizado um pouco acima da Coroa
-            bb.StudsOffset = Vector3.new(0, 1.5, 0) 
+            -- Nome fica bem coladinho acima da coroa (0.75 studs)
+            bb.StudsOffset = Vector3.new(0, alturaTopo + 0.75, 0) 
             
             -- Aplica a peça 3D no personagem apenas se for o Dono
             item.Parent = character
         else
             -- VIP: Apenas Nome (Removemos a auréola)
-            item:Destroy() -- Destrói a peça base para não sobrecarregar com blocos invisíveis
+            item:Destroy() 
             
             lbl.Text = "VIP"
             lbl.TextColor3 = Color3.fromRGB(0, 255, 255) 
             
-            -- Altura ajustada: Texto centralizado um pouco acima da cabeça
-            bb.StudsOffset = Vector3.new(0, 1.2, 0)
+            -- Nome fica colado logo acima do topo do cabelo/cabeça
+            bb.StudsOffset = Vector3.new(0, alturaTopo + 0.4, 0)
         end
     end
 end
-
 
 -- NOCLIP
 local function noclipStart()
