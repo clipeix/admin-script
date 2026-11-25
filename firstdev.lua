@@ -66,6 +66,12 @@ local State = {
     Fling     = false,  -- fling manual girando
     Fly = false,
     SuperRing = false,
+    -- Adicione dentro de State = { ... }
+    Aimbot    = false,
+    AimWall   = false,
+    AimPred   = false,
+    AimTeam   = false,
+    ESPTeam   = true,
 
 }
 
@@ -81,6 +87,12 @@ local Cfg = {
     PanelH      = 300,
     FlySpeed = 30,
     RingRadius = 30,
+    -- Adicione dentro de Cfg = { ... }
+    AimFOV      = 30,
+    AimSmooth   = 0.20, -- 0.01 a 1.00
+    AimPart     = "Head", -- "Head" ou "HumanoidRootPart"
+    AimPriority = "Center", -- "Center" ou "Distance"
+    ESPColorIdx = 1,
 
 }
 
@@ -290,6 +302,131 @@ local function aplicarTagsEVisuais(player, character)
             bb.StudsOffset = Vector3.new(0, alturaTopo + 0.4, 0)
         end
     end
+end
+
+-- ============================================================
+--  AIMBOT (PADRAO B)
+-- ============================================================
+local aimColors = {
+    Color3.fromRGB(255, 0, 0),
+    Color3.fromRGB(0, 255, 0),
+    Color3.fromRGB(0, 100, 255),
+    Color3.fromRGB(255, 0, 255),
+    Color3.fromRGB(150, 0, 255),
+    Color3.fromRGB(255, 255, 0),
+}
+
+local function isEnemyForAim(plr)
+    if not plr or plr == LP then return false end
+    if not State.AimTeam then return true end
+    if LP.Team and plr.Team then return LP.Team ~= plr.Team end
+    if LP.TeamColor and plr.TeamColor then
+        local wL = (LP.TeamColor == Color3.fromRGB(255, 255, 255))
+        local wT = (plr.TeamColor == Color3.fromRGB(255, 255, 255))
+        if not wL and not wT then return LP.TeamColor ~= plr.TeamColor end
+    end
+    local mA = LP:GetAttribute("Team") or LP:GetAttribute("TeamName") or LP:GetAttribute("TeamColor")
+    local tA = plr:GetAttribute("Team") or plr:GetAttribute("TeamName") or plr:GetAttribute("TeamColor")
+    if mA and tA then return mA ~= tA end
+    return true
+end
+
+local function isWallBlocking(targetPart)
+    if not State.AimWall then return false end
+    local char = getChar()
+    local cam = workspace.CurrentCamera
+    if not char or not cam or not targetPart then return false end
+
+    local origin = cam.CFrame.Position
+    local dir = targetPart.Position - origin
+    if dir.Magnitude < 0.01 then return false end
+
+    local params = RaycastParams.new()
+    params.FilterDescendantsInstances = {char, cam}
+    params.FilterType = Enum.RaycastFilterType.Exclude
+
+    local hit = workspace:Raycast(origin, dir.Unit * math.min(dir.Magnitude, 1000), params)
+    if not hit then return false end
+    return hit.Instance ~= targetPart and not hit.Instance:IsDescendantOf(targetPart.Parent)
+end
+
+local function getBestAimTarget()
+    local cam = workspace.CurrentCamera
+    if not cam then return nil end
+
+    local centerScreen = cam.ViewportSize / 2
+    local camPos = cam.CFrame.Position
+    local camLook = cam.CFrame.LookVector
+    local bestPos, bestScore = nil, math.huge
+
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LP and p.Character and isEnemyForAim(p) then
+            local part = p.Character:FindFirstChild(Cfg.AimPart) or p.Character:FindFirstChild("HumanoidRootPart")
+            local hum = p.Character:FindFirstChildOfClass("Humanoid")
+            if part and hum and hum.Health > 0 and not isWallBlocking(part) then
+                local aimPos = part.Position
+                if State.AimPred then
+                    local hrp = p.Character:FindFirstChild("HumanoidRootPart")
+                    if hrp then
+                        aimPos = aimPos + (hrp.AssemblyLinearVelocity * ((hrp.Position - camPos).Magnitude / 1000))
+                    end
+                end
+
+                local screenPos, onScreen = cam:WorldToViewportPoint(aimPos)
+                if onScreen then
+                    local toTarget = (aimPos - camPos)
+                    if toTarget.Magnitude > 0.01 then
+                        local angle = math.deg(math.acos(math.clamp(camLook:Dot(toTarget.Unit), -1, 1)))
+                        if angle < Cfg.AimFOV then
+                            local score = (Cfg.AimPriority == "Center")
+                                and (Vector2.new(screenPos.X, screenPos.Y) - centerScreen).Magnitude
+                                or toTarget.Magnitude
+                            if score < bestScore then
+                                bestScore = score
+                                bestPos = aimPos
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    return bestPos
+end
+
+-- ============================================================
+--  COR DO ESP (PADRAO B + PALETA DO CODIGO A)
+-- ============================================================
+local function cycleESPColor()
+    Cfg.ESPColorIdx = Cfg.ESPColorIdx + 1
+    if Cfg.ESPColorIdx > #aimColors then
+        Cfg.ESPColorIdx = 1
+    end
+    local col = aimColors[Cfg.ESPColorIdx]
+    notify("ESP Cor", "Cor alterada (" .. Cfg.ESPColorIdx .. "/" .. #aimColors .. ")", 2)
+    return col
+end
+
+-- ============================================================
+--  REFORCO NOCLIP NO STEPPED (PADRAO B)
+-- ============================================================
+local function noclipSteppedReinforceStart()
+    killConn("NoclipReinforce")
+    Conn["NoclipReinforce"] = RunService.Stepped:Connect(function()
+        if not State.Noclip then return end
+        local c = getChar()
+        if not c then return end
+        for _, v in ipairs(c:GetDescendants()) do
+            if v:IsA("BasePart") and v.CanCollide then
+                v.CanCollide = false
+            end
+        end
+    end)
+end
+
+local function noclipSteppedReinforceStop()
+    killConn("NoclipReinforce")
 end
 
 -- NOCLIP
@@ -563,116 +700,284 @@ local function applyJumpPower()
     if h then h.JumpPower = Cfg.JumpPower end
 end
 
--- INVISIBILIDADE
--- Invisivel para OUTROS: muda transparencia no servidor via LocalScript
--- (client-side: o proprio jogador vê o personagem mas os outros nao)
+-- INVISIBILIDADE (ULTRA MEGA — Transparente para você / Oculto ao máximo no client)
 local invisSave = {}
+local invisSelfView = true -- true = você vê o boneco semi-transparente | false = some por completo até pra você
+
+local function isVisualPart(inst)
+    return inst:IsA("BasePart") and inst.Name ~= "HumanoidRootPart"
+end
+
+local function applyInvisToChar(chr)
+    if not chr then return end
+
+    for _, desc in ipairs(chr:GetDescendants()) do
+        if desc:IsA("BasePart") then
+            if not invisSave[desc] then
+                invisSave[desc] = {
+                    kind = "part",
+                    Transparency = desc.Transparency,
+                    LocalTransparencyModifier = desc.LocalTransparencyModifier
+                }
+            end
+            if desc.Name == "HumanoidRootPart" then
+                desc.Transparency = 1
+                desc.LocalTransparencyModifier = 1
+            else
+                desc.Transparency = invisSelfView and 0.65 or 1
+                desc.LocalTransparencyModifier = invisSelfView and 0.65 or 1
+            end
+        elseif desc:IsA("Decal") or desc:IsA("Texture") then
+            if not invisSave[desc] then
+                invisSave[desc] = {
+                    kind = "decal",
+                    Transparency = desc.Transparency
+                }
+            end
+            desc.Transparency = 1
+        elseif desc:IsA("ParticleEmitter") or desc:IsA("Beam") or desc:IsA("Trail") then
+            if not invisSave[desc] then
+                invisSave[desc] = {
+                    kind = "effect",
+                    Enabled = desc.Enabled
+                }
+            end
+            desc.Enabled = false
+        end
+    end
+end
 
 local function invisStart()
     invisSave = {}
-    local c = getChar(); if not c then return end
-    for _, p in ipairs(c:GetDescendants()) do
-        if p:IsA("BasePart") then
-            invisSave[p] = p.LocalTransparencyModifier
-            p.LocalTransparencyModifier = 0  -- voce vê
-        end
-    end
-    -- Para outros jogadores, seta Transparency (visible no server)
-    for _, p in ipairs(c:GetDescendants()) do
-        if p:IsA("BasePart") then
-            p.Transparency = 1
-        end
-    end
     killConn("Invisible")
+    killConn("InvisibleDescAdded")
+
+    local c = getChar()
+    if c then
+        applyInvisToChar(c)
+
+        Conn["InvisibleDescAdded"] = c.DescendantAdded:Connect(function(desc)
+            if not State.Invisible then return end
+            task.defer(function()
+                if State.Invisible and desc and desc.Parent then
+                    if desc:IsA("BasePart") then
+                        if not invisSave[desc] then
+                            invisSave[desc] = {
+                                kind = "part",
+                                Transparency = desc.Transparency,
+                                LocalTransparencyModifier = desc.LocalTransparencyModifier
+                            }
+                        end
+                        if desc.Name == "HumanoidRootPart" then
+                            desc.Transparency = 1
+                            desc.LocalTransparencyModifier = 1
+                        else
+                            desc.Transparency = invisSelfView and 0.65 or 1
+                            desc.LocalTransparencyModifier = invisSelfView and 0.65 or 1
+                        end
+                    elseif desc:IsA("Decal") or desc:IsA("Texture") then
+                        if not invisSave[desc] then
+                            invisSave[desc] = { kind = "decal", Transparency = desc.Transparency }
+                        end
+                        desc.Transparency = 1
+                    elseif desc:IsA("ParticleEmitter") or desc:IsA("Beam") or desc:IsA("Trail") then
+                        if not invisSave[desc] then
+                            invisSave[desc] = { kind = "effect", Enabled = desc.Enabled }
+                        end
+                        desc.Enabled = false
+                    end
+                end
+            end)
+        end)
+    end
+
     Conn["Invisible"] = RunService.Heartbeat:Connect(function()
         if not State.Invisible then return end
-        local cc = getChar(); if not cc then return end
-        for _, p in ipairs(cc:GetDescendants()) do
-            if p:IsA("BasePart") then
-                p.Transparency = 1
-                p.LocalTransparencyModifier = 0
-            end
+        local cc = getChar()
+        if cc then
+            applyInvisToChar(cc)
         end
     end)
-    notify("Invisivel","ATIVADO — sumiu para os outros!",3)
+
+    notify("Invisivel", "ATIVADO — modo invisível reforçado!", 3)
 end
 
 local function invisStop()
     killConn("Invisible")
-    local c = getChar(); if not c then return end
-    for _, p in ipairs(c:GetDescendants()) do
-        if p:IsA("BasePart") then
-            p.Transparency = 0
-            p.LocalTransparencyModifier = invisSave[p] or 0
+    killConn("InvisibleDescAdded")
+
+    for inst, data in pairs(invisSave) do
+        if inst and inst.Parent then
+            pcall(function()
+                if data.kind == "part" then
+                    inst.Transparency = data.Transparency
+                    inst.LocalTransparencyModifier = data.LocalTransparencyModifier
+                elseif data.kind == "decal" then
+                    inst.Transparency = data.Transparency
+                elseif data.kind == "effect" then
+                    inst.Enabled = data.Enabled
+                end
+            end)
         end
     end
+
     invisSave = {}
-    notify("Invisivel","DESATIVADO",2)
+    notify("Invisivel", "DESATIVADO", 2)
 end
 
--- ESP
-local function buildESP(plr)
-    if plr == LP then return end
-    local function apply(chr)
-        if not chr then return end
-        local old = chr:FindFirstChild("__SAESP")
-        if old then old:Destroy() end
-        local hl = Instance.new("Highlight")
-        hl.Name = "__SAESP"
-        hl.FillColor = C.Red
-        hl.OutlineColor = Color3.new(1,1,1)
-        hl.FillTransparency = 0.55
-        hl.OutlineTransparency = 0
-        hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-        hl.Parent = chr
-        local head = chr:FindFirstChild("Head")
-        if head then
-            local bb = Instance.new("BillboardGui")
-            bb.Name = "__SABB"
-            bb.Size = UDim2.new(0,130,0,32)
-            bb.StudsOffset = Vector3.new(0,3.8,0)
-            bb.AlwaysOnTop = true
-            bb.Parent = head
-            local lbl = Instance.new("TextLabel")
-            lbl.Size = UDim2.new(1,0,1,0)
-            lbl.BackgroundTransparency = 1
-            lbl.Text = plr.Name
-            lbl.TextColor3 = C.RedHot
-            lbl.TextStrokeTransparency = 0
-            lbl.TextSize = 13
-            lbl.Font = Enum.Font.GothamBold
-            lbl.Parent = bb
+-- ESP (ULTRA — Padrão Código B + Distância/Time/Limpeza do Código A)
+local espTeamColor = true -- true = azul aliado / vermelho inimigo | false = vermelho padrão
+
+local function isSameTeam(plr)
+    if not plr or plr == LP then return false end
+    if LP.Team and plr.Team then
+        return LP.Team == plr.Team
+    end
+    if LP.TeamColor and plr.TeamColor then
+        local wL = (LP.TeamColor == Color3.fromRGB(255, 255, 255))
+        local wT = (plr.TeamColor == Color3.fromRGB(255, 255, 255))
+        if not wL and not wT then
+            return LP.TeamColor == plr.TeamColor
         end
     end
-    if plr.Character then apply(plr.Character) end
-    plr.CharacterAdded:Connect(function(chr)
-        if State.ESP then task.wait(0.5); apply(chr) end
-    end)
+    local mA = LP:GetAttribute("Team") or LP:GetAttribute("TeamName") or LP:GetAttribute("TeamColor")
+    local tA = plr:GetAttribute("Team") or plr:GetAttribute("TeamName") or plr:GetAttribute("TeamColor")
+    if mA and tA then
+        return mA == tA
+    end
+    return false
+end
+
+local function getESPColor(plr)
+    if espTeamColor then
+        return isSameTeam(plr) and Color3.fromRGB(0, 170, 255) or C.RedHot
+    end
+    return C.RedHot
+end
+
+local function clearPlayerESP(plr, chr)
+    local targetChar = chr or (plr and plr.Character)
+    if targetChar then
+        local hl = targetChar:FindFirstChild("__SAESP")
+        if hl then pcall(function() hl:Destroy() end) end
+        local hd = targetChar:FindFirstChild("Head")
+        if hd then
+            local bb = hd:FindFirstChild("__SABB")
+            if bb then pcall(function() bb:Destroy() end) end
+        end
+    end
+end
+
+local function clearAllESP()
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LP then
+            clearPlayerESP(p, p.Character)
+        end
+    end
+end
+
+local function updatePlayerESP(plr)
+    if plr == LP or not State.ESP then
+        clearPlayerESP(plr)
+        return
+    end
+
+    local chr = plr.Character
+    local hrp = chr and chr:FindFirstChild("HumanoidRootPart")
+    local head = chr and chr:FindFirstChild("Head")
+    local hum = chr and chr:FindFirstChildOfClass("Humanoid")
+
+    if not chr or not chr.Parent or not hrp or not head or not hum or hum.Health <= 0 then
+        clearPlayerESP(plr, chr)
+        return
+    end
+
+    local col = getESPColor(plr)
+
+    -- Highlight
+    local hl = chr:FindFirstChild("__SAESP")
+    if not hl or not hl:IsA("Highlight") then
+        if hl then pcall(function() hl:Destroy() end) end
+        hl = Instance.new("Highlight")
+        hl.Name = "__SAESP"
+        hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+        hl.FillTransparency = 0.55
+        hl.OutlineTransparency = 0
+        hl.OutlineColor = Color3.new(1, 1, 1)
+        hl.Adornee = chr
+        hl.Parent = chr
+    end
+    hl.FillColor = col
+
+    -- BillboardGui (Nome + Distância)
+    local bb = head:FindFirstChild("__SABB")
+    local lbl = bb and bb:FindFirstChild("InfoLabel")
+    if not bb or not bb:IsA("BillboardGui") or not lbl then
+        if bb then pcall(function() bb:Destroy() end) end
+        bb = Instance.new("BillboardGui")
+        bb.Name = "__SABB"
+        bb.Size = UDim2.new(0, 160, 0, 32)
+        bb.StudsOffset = Vector3.new(0, 3.8, 0)
+        bb.AlwaysOnTop = true
+        bb.Adornee = head
+        bb.Parent = head
+
+        lbl = Instance.new("TextLabel")
+        lbl.Name = "InfoLabel"
+        lbl.Size = UDim2.new(1, 0, 1, 0)
+        lbl.BackgroundTransparency = 1
+        lbl.TextStrokeTransparency = 0
+        lbl.TextStrokeColor3 = Color3.new(0, 0, 0)
+        lbl.TextSize = 13
+        lbl.Font = Enum.Font.GothamBold
+        lbl.Parent = bb
+    end
+
+    lbl.TextColor3 = col
+    local myRoot = getRoot()
+    if myRoot then
+        local dist = math.floor((myRoot.Position - hrp.Position).Magnitude)
+        lbl.Text = plr.Name .. " [" .. dist .. "m]"
+    else
+        lbl.Text = plr.Name
+    end
 end
 
 local function espStart()
-    for _, p in ipairs(Players:GetPlayers()) do buildESP(p) end
-    killConn("ESPAdded")
-    Conn["ESPAdded"] = Players.PlayerAdded:Connect(function(p)
-        if State.ESP then buildESP(p) end
+    killConn("ESPLoop")
+    killConn("ESPRemoving")
+
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LP then
+            updatePlayerESP(p)
+        end
+    end
+
+    Conn["ESPRemoving"] = Players.PlayerRemoving:Connect(function(p)
+        clearPlayerESP(p)
     end)
-    notify("ESP","ATIVADO — veja todos atraves das paredes!",3)
+
+    local lastTick = 0
+    Conn["ESPLoop"] = RunService.Heartbeat:Connect(function()
+        if not State.ESP then return end
+        if tick() - lastTick < 0.2 then return end
+        lastTick = tick()
+
+        for _, p in ipairs(Players:GetPlayers()) do
+            if p ~= LP then
+                updatePlayerESP(p)
+            end
+        end
+    end)
+
+    notify("ESP", "ATIVADO — nome, distância e wallhack!", 3)
 end
 
 local function espStop()
-    killConn("ESPAdded")
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p.Character then
-            local hl = p.Character:FindFirstChild("__SAESP")
-            if hl then hl:Destroy() end
-            local hd = p.Character:FindFirstChild("Head")
-            if hd then
-                local bb = hd:FindFirstChild("__SABB")
-                if bb then bb:Destroy() end
-            end
-        end
-    end
-    notify("ESP","DESATIVADO",2)
+    killConn("ESPLoop")
+    killConn("ESPRemoving")
+    clearAllESP()
+    notify("ESP", "DESATIVADO", 2)
 end
 
 -- FLING MANUAL (gira no lugar rapidamente, lanca se tocar em alguem)
@@ -912,32 +1217,60 @@ local function superRingStop()
     notify("Super Ring", "DESATIVADO", 2)
 end
 
--- FULLBRIGHT
+-- FULLBRIGHT (Padrão Código B + Lógica do Código A)
 local fbOrig = {}
+local fbColorEffect = nil
 
 local function fullBrightStart()
     fbOrig.Ambient        = Lighting.Ambient
     fbOrig.OutdoorAmbient = Lighting.OutdoorAmbient
     fbOrig.Brightness     = Lighting.Brightness
-    Lighting.Ambient        = Color3.fromRGB(255,255,255)
-    Lighting.OutdoorAmbient = Color3.fromRGB(255,255,255)
+    fbOrig.ClockTime      = Lighting.ClockTime
+
+    Lighting.Ambient        = Color3.fromRGB(178, 178, 178)
+    Lighting.OutdoorAmbient = Color3.fromRGB(178, 178, 178)
     Lighting.Brightness     = 2
-    for _, ef in ipairs(Lighting:GetChildren()) do
-        if ef:IsA("BlurEffect") or ef:IsA("ColorCorrectionEffect")
-        or ef:IsA("DepthOfFieldEffect") then ef.Enabled = false end
+    Lighting.ClockTime      = 12
+
+    if not fbColorEffect or not fbColorEffect.Parent then
+        fbColorEffect = Instance.new("ColorCorrectionEffect")
+        fbColorEffect.Name = "__SAFullBrightCC"
+        fbColorEffect.Brightness = 0.2
+        fbColorEffect.Parent = Lighting
+    else
+        fbColorEffect.Brightness = 0.2
+        fbColorEffect.Enabled = true
     end
-    notify("FullBright","ATIVADO — visao noturna!",3)
+
+    for _, ef in ipairs(Lighting:GetChildren()) do
+        if ef ~= fbColorEffect and (ef:IsA("BlurEffect") or ef:IsA("ColorCorrectionEffect") or ef:IsA("DepthOfFieldEffect")) then
+            ef.Enabled = false
+        end
+    end
+
+    notify("FullBright", "ATIVADO — visão noturna!", 3)
 end
 
 local function fullBrightStop()
-    Lighting.Ambient        = fbOrig.Ambient or Color3.fromRGB(127,127,127)
-    Lighting.OutdoorAmbient = fbOrig.OutdoorAmbient or Color3.fromRGB(127,127,127)
+    Lighting.Ambient        = fbOrig.Ambient or Color3.fromRGB(127, 127, 127)
+    Lighting.OutdoorAmbient = fbOrig.OutdoorAmbient or Color3.fromRGB(127, 127, 127)
     Lighting.Brightness     = fbOrig.Brightness or 1
-    for _, ef in ipairs(Lighting:GetChildren()) do
-        if ef:IsA("BlurEffect") or ef:IsA("ColorCorrectionEffect")
-        or ef:IsA("DepthOfFieldEffect") then ef.Enabled = true end
+    if fbOrig.ClockTime then
+        Lighting.ClockTime = fbOrig.ClockTime
     end
-    notify("FullBright","DESATIVADO",2)
+
+    if fbColorEffect then
+        fbColorEffect:Destroy()
+        fbColorEffect = nil
+    end
+
+    for _, ef in ipairs(Lighting:GetChildren()) do
+        if ef:IsA("BlurEffect") or ef:IsA("ColorCorrectionEffect") or ef:IsA("DepthOfFieldEffect") then
+            ef.Enabled = true
+        end
+    end
+
+    notify("FullBright", "DESATIVADO", 2)
 end
 
 -- GOLD MODE — Deus absoluto: godmode + speedboost + infJump + antiVoid + noclip + fullbright
@@ -1944,6 +2277,42 @@ do
             notify("Kill","Nenhum jogador perto para matar!",2) 
         end
     end)
+    
+    local secAim = makeSection(tf, "Aimbot", 12)
+
+    local _, setAimbot = makeToggle(tf, "Aimbot — Mira automática", 13, function(v)
+        State.Aimbot = v
+        notify("Aimbot", v and "ATIVADO" or "DESATIVADO", 2)
+    end)
+
+    makeStepper(tf, "FOV Aimbot", 14, Cfg.AimFOV, 5, 90, 5, function(v)
+        Cfg.AimFOV = v
+    end)
+
+    makeStepper(tf, "Smooth (%)", 15, math.floor(Cfg.AimSmooth * 100), 1, 100, 5, function(v)
+        Cfg.AimSmooth = v / 100
+    end)
+
+    makeToggle(tf, "Mira: Tronco (OFF = Cabeça)", 16, function(v)
+        Cfg.AimPart = v and "HumanoidRootPart" or "Head"
+    end)
+
+    makeToggle(tf, "Prioridade: Distância (OFF = Centro)", 17, function(v)
+        Cfg.AimPriority = v and "Distance" or "Center"
+    end)
+
+    makeToggle(tf, "Wall Check — Ignorar parede", 18, function(v)
+        State.AimWall = v
+    end)
+
+    makeToggle(tf, "Predição de movimento", 19, function(v)
+        State.AimPred = v
+    end)
+
+    makeToggle(tf, "Só Inimigos (Team Check)", 20, function(v)
+        State.AimTeam = v
+    end)
+
 end
 
 -- ============================================================
@@ -1967,6 +2336,10 @@ do
     local _, setFB = makeToggle(tf, "FullBright — Iluminacao maxima", 4, function(v)
         State.FullBright = v
         if v then fullBrightStart() else fullBrightStop() end
+    end)
+    
+        makeAction(tf, "Trocar Cor do ESP", 4.7, function()
+        cycleESPColor()
     end)
     
         local _, setSuperRing = makeToggle(tf, "Super Ring — Aura giratória", 4.5, function(v)
@@ -2508,6 +2881,89 @@ end
 switchTab("MOVE")
 
 -- ============================================================
+--  LOOP DO AIMBOT & FOV
+-- ============================================================
+local aimFovFrame = Instance.new("Frame")
+aimFovFrame.Name = "AimFovCircle"
+aimFovFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+aimFovFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
+aimFovFrame.BackgroundTransparency = 1
+aimFovFrame.Visible = false
+aimFovFrame.ZIndex = 20
+aimFovFrame.Parent = sg
+Instance.new("UICorner", aimFovFrame).CornerRadius = UDim.new(1, 0)
+
+local aimFovStroke = Instance.new("UIStroke", aimFovFrame)
+aimFovStroke.Thickness = 2
+
+local aimHue = 0
+
+killConn("AimbotLoop")
+Conn["AimbotLoop"] = RunService.RenderStepped:Connect(function()
+    local cam = workspace.CurrentCamera
+    if not cam then return end
+
+    if State.Aimbot then
+        aimFovFrame.Visible = true
+        local radiusPx = math.tan(math.rad(Cfg.AimFOV)) * (cam.ViewportSize.Y / 2)
+        aimFovFrame.Size = UDim2.new(0, radiusPx * 2, 0, radiusPx * 2)
+        aimHue = (aimHue + 0.005) % 1
+        aimFovStroke.Color = Color3.fromHSV(aimHue, 1, 1)
+
+        local targetPos = getBestAimTarget()
+        if targetPos then
+            local camPos = cam.CFrame.Position
+            local alpha = math.clamp(1 - Cfg.AimSmooth, 0.01, 1)
+            cam.CFrame = cam.CFrame:Lerp(CFrame.new(camPos, targetPos), alpha)
+        end
+    else
+        aimFovFrame.Visible = false
+    end
+end)
+
+local aimQuickBtn = Instance.new("TextButton")
+aimQuickBtn.Name = "AimQuickBtn"
+aimQuickBtn.Size = UDim2.new(0, 50, 0, 50)
+aimQuickBtn.Position = UDim2.new(1, -68, 0.5, -25)
+aimQuickBtn.BackgroundColor3 = C.Red
+aimQuickBtn.BackgroundTransparency = 0.35
+aimQuickBtn.Text = "AIM"
+aimQuickBtn.TextColor3 = C.White
+aimQuickBtn.Font = Enum.Font.GothamBlack
+aimQuickBtn.TextSize = 11
+aimQuickBtn.ZIndex = 45
+aimQuickBtn.Parent = sg
+Instance.new("UICorner", aimQuickBtn).CornerRadius = UDim.new(1, 0)
+
+local dragAim, dragAimStart, aimStartPos
+aimQuickBtn.InputBegan:Connect(function(i)
+    if i.UserInputType == Enum.UserInputType.Touch or i.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragAim = true
+        dragAimStart = i.Position
+        aimStartPos = aimQuickBtn.Position
+    end
+end)
+UserInputService.InputChanged:Connect(function(i)
+    if dragAim and (i.UserInputType == Enum.UserInputType.Touch or i.UserInputType == Enum.UserInputType.MouseMovement) then
+        local d = i.Position - dragAimStart
+        aimQuickBtn.Position = UDim2.new(aimStartPos.X.Scale, aimStartPos.X.Offset + d.X, aimStartPos.Y.Scale, aimStartPos.Y.Offset + d.Y)
+    end
+end)
+UserInputService.InputEnded:Connect(function(i)
+    if i.UserInputType == Enum.UserInputType.Touch or i.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragAim = false
+    end
+end)
+aimQuickBtn.MouseButton1Click:Connect(function()
+    State.Aimbot = not State.Aimbot
+    aimQuickBtn.BackgroundColor3 = State.Aimbot and C.Green or C.Red
+    aimQuickBtn.Text = State.Aimbot and "LOCK" or "AIM"
+    notify("Aimbot", State.Aimbot and "LOCK ATIVADO" or "AIM DESATIVADO", 2)
+end)
+
+
+
+-- ============================================================
 --  ABRIR / FECHAR PAINEL
 -- ============================================================
 local panelMinimized = false
@@ -2600,6 +3056,7 @@ floatBtn.InputBegan:Connect(function(input)
         if panelVisible then closePanel() else openPanel() end
     end
 end)
+
 
 -- ============================================================
 --  NOTIFICACAO DE BOAS-VINDAS
